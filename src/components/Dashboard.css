@@ -1,0 +1,99 @@
+    Global Dashboard Reset
+    .dashboard-layout {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        width: 100%;
+        background-color: #ffffff;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: black;
+    }
+
+    /* Header and SubNav styles moved to respective files */
+
+    /* Content Area */
+    .content-area-full {
+        flex-grow: 1;
+        padding: 24px 0px;
+        max-width: 80vw;
+        margin: 0px auto;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .page-title {
+        font-size: 1.25rem;
+        line-height: 1.75rem;
+        font-weight: 600px;
+        color: #374151;
+        margin-bottom: 32px;
+    }
+
+    /* Footer */
+    .main-footer {
+        text-align: right;
+        padding: 24px;
+        color: #94a3b8;
+        font-size: 0.875rem;
+        background-color: transparent;
+    }
+
+    /* Dashboard Home - Stats Card */
+    .stat-card-focus {
+        background-color: white;
+        border: 2px solid #d2d4d791;
+        border-radius: 11px;
+        padding: 10px;
+        width: 10vw;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        box-shadow: 0 0px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .stat-icon-box {
+        background-color: #84cc16;
+        /* Lime Green */
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.5rem;
+    }
+
+    .stat-info {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .stat-value {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #1e293b;
+        line-height: 1.2;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: #64748b;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .header-right {
+            display: none;
+            /* Simplify for mobile for now, or add toggle */
+        }
+
+        .sub-nav {
+            overflow-x: auto;
+            padding: 0 16px;
+        }
+
+        .content-area-full {
+            padding: 24px 16px;
+        }
+    }

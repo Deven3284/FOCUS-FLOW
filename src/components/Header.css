@@ -1,0 +1,184 @@
+/* Header.css */
+.main-header {
+    /* background-color: #1a202cf0; */
+    background-color: #1a202c;
+    color: white;
+    height: 65px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 40px;
+    box-sizing: border-box;
+    position: sticky;
+    /* Make it sticky */
+    top: 0;
+    z-index: 1000;
+
+
+
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+}
+
+/* Improved Dropdown Positioning & Styling */
+.logo-container {
+    display: flex;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+        'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    align-items: center;
+    gap: 12px;
+    font-size: 1.25rem;
+    font-weight: 500;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    min-width: 180px;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    font-weight: 500px;
+}
+
+.btn-gototasks {
+    background-color: transparent;
+    border: 1px solid #4b5563;
+    color: #e5e7eb;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-gototasks:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: #9ca3af;
+    color: white;
+}
+
+.user-profile-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    position: relative;
+    padding: 8px 16px;
+    border-radius: 8px;
+    min-width: 200px;
+    transition: background 0.2s;
+}
+
+.user-profile-header:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.avatar-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #111827;
+    /* Darker circle color */
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.user-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #ffffff;
+    line-height: 1.2;
+}
+
+.user-role {
+    font-size: 0.6rem;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+}
+
+/* Profile Dropdown Styles */
+.profile-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 10px;
+    background-color: #1F2937;
+    color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    min-width: 200px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    padding: 5px 0;
+    overflow: hidden;
+    animation: fadeInDropdown 0.2s ease-out;
+    border: 1px solid #374151;
+}
+
+.profile-dropdown-item {
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    color: #e5e7eb;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+}
+
+.profile-dropdown-item:hover {
+    background-color: #374151;
+    color: white;
+}
+
+.profile-dropdown-item.logout {
+    border-top: 1px solid #374151;
+    color: #f87171;
+}
+
+.profile-dropdown-item.logout:hover {
+    background-color: #451a1a;
+    color: #fca5a5;
+}
+
+@keyframes fadeInDropdown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .header-right {
+        display: none;
+    }
+}
