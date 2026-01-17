@@ -11,7 +11,14 @@ export const signIn = async (email, password) => {
         const response = await api.post('/users/signIn', { email, password });
         return response.data;
     } catch (error) {
-        throw error.response?.data || { message: 'Network error. Please try again.' };
+        // Handle different error scenarios
+        if (error.code === 'ECONNABORTED') {
+            throw { message: 'Request timeout. Please check your connection and try again.' };
+        }
+        if (error.code === 'ERR_NETWORK' || !error.response) {
+            throw { message: 'Network error. Please check if the server is running.' };
+        }
+        throw error.response?.data || { message: 'An error occurred. Please try again.' };
     }
 };
 

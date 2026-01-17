@@ -63,6 +63,7 @@ export const useTaskStore = create(
                             estMin: task.estimatedTime?.minutes || task.estMin || 0,
                             timeElapsed: task.totalSeconds || 0,
                             isTimerRunning: task.isTrackerStarted || false,
+                            dueDate: task.dueDate || 'Today', // Add dueDate field
                             userId: data.user
                         }));
 
@@ -72,13 +73,18 @@ export const useTaskStore = create(
                             tasks: apiTasks,
                             dailyStatusId: data._id,
                             isLoading: false,
-                            activeSessions: data.startTime ? { [data.user]: new Date(data.startTime).getTime() } : {}
+                            activeSessions: (data.startTime && !data.endTime) ? { [data.user]: new Date(data.startTime).getTime() } : {}
                         });
 
                         return { success: true, data };
                     } else {
                         console.log('No today data found');
-                        set({ isLoading: false });
+                        set({
+                            isLoading: false,
+                            tasks: [],
+                            dailyStatusId: null,
+                            activeSessions: {}
+                        });
                         return { success: true, data: null };
                     }
                 } catch (error) {
@@ -249,59 +255,69 @@ export const useTaskStore = create(
                 }
             },
 
-            endDay: (userId) => set((state) => {
-                const now = new Date();
-                const sessionStart = state.activeSessions[userId] ? new Date(state.activeSessions[userId]) : null;
+            endDay: async (userId) => {
+                const state = get();
 
-                // Filter tasks by userId
-                const userTasks = state.tasks.filter(t => t.userId === userId);
-                const otherTasks = state.tasks.filter(t => t.userId !== userId);
-
-                const completedTasks = userTasks.filter(t => t.status === 'Completed');
-                const ongoingTasks = userTasks.filter(t => t.status !== 'Completed');
-
-                // Create a history entry ONLY if there are completed tasks
-                let newHistory = state.history;
-                if (completedTasks.length > 0) {
-                    const historyEntry = {
-                        id: Date.now(),
-                        userId: userId, // Tag history with userId
-                        date: now.toLocaleDateString('en-IN', {
-                            day: '2-digit', month: 'short', year: 'numeric',
-                            timeZone: 'Asia/Kolkata'
-                        }), // e.g., "07 Jan 2026"
-                        startTime: sessionStart ? sessionStart.toLocaleTimeString('en-IN', {
-                            hour: '2-digit', minute: '2-digit', hour12: true,
-                            timeZone: 'Asia/Kolkata'
-                        }) : '-',
-                        endTime: now.toLocaleTimeString('en-IN', {
-                            hour: '2-digit', minute: '2-digit', hour12: true,
-                            timeZone: 'Asia/Kolkata'
-                        }),
-                        tasks: [...completedTasks],
-                        taskCount: completedTasks.length
-                    };
-                    newHistory = [historyEntry, ...state.history];
-                }
-
-                // Call backend to stop timer
+                // 1. Call backend to stop timer FIRST
                 if (state.dailyStatusId) {
-                    api.post('/users/stopTimer', { id: state.dailyStatusId }).catch(err => {
+                    try {
+                        await api.post('/users/stopTimer', { id: state.dailyStatusId });
+                    } catch (err) {
                         console.error('Failed to stop timer on backend:', err);
-                    });
+                        throw err; // Propagate error so UI can show it
+                    }
                 }
 
-                // Clear active session
-                const newActiveSessions = { ...state.activeSessions };
-                delete newActiveSessions[userId];
+                // 2. Only if backend success, update local state
+                set((state) => {
+                    const now = new Date();
+                    const sessionStart = state.activeSessions[userId] ? new Date(state.activeSessions[userId]) : null;
 
-                return {
-                    history: newHistory,
-                    activeSessions: newActiveSessions,
-                    dailyStatusId: null,
-                    tasks: [...otherTasks, ...ongoingTasks] // Keep other users' tasks and current user's ongoing tasks
-                };
-            }),
+                    // Filter tasks by userId
+                    const userTasks = state.tasks.filter(t => t.userId === userId);
+                    const otherTasks = state.tasks.filter(t => t.userId !== userId);
+
+                    const completedTasks = userTasks.filter(t => t.status === 'Completed');
+                    const ongoingTasks = userTasks.filter(t => t.status !== 'Completed');
+
+                    // Create a history entry ONLY if there are completed tasks
+                    let newHistory = state.history;
+                    if (completedTasks.length > 0) {
+                        const historyEntry = {
+                            id: Date.now(),
+                            userId: userId, // Tag history with userId
+                            date: now.toLocaleDateString('en-IN', {
+                                day: '2-digit', month: 'short', year: 'numeric',
+                                timeZone: 'Asia/Kolkata'
+                            }), // e.g., "07 Jan 2026"
+                            startTime: sessionStart ? sessionStart.toLocaleTimeString('en-IN', {
+                                hour: '2-digit', minute: '2-digit', hour12: true,
+                                timeZone: 'Asia/Kolkata'
+                            }) : '-',
+                            endTime: now.toLocaleTimeString('en-IN', {
+                                hour: '2-digit', minute: '2-digit', hour12: true,
+                                timeZone: 'Asia/Kolkata'
+                            }),
+                            tasks: [...completedTasks],
+                            taskCount: completedTasks.length
+                        };
+                        newHistory = [historyEntry, ...state.history];
+                    }
+
+                    // Clear active session
+                    const newActiveSessions = { ...state.activeSessions };
+                    delete newActiveSessions[userId];
+
+                    return {
+                        history: newHistory,
+                        activeSessions: newActiveSessions,
+                        dailyStatusId: null,
+                        tasks: [...otherTasks, ...ongoingTasks] // Keep other users' tasks and current user's ongoing tasks
+                    };
+                });
+
+                return { success: true };
+            },
 
             cleanupEmptyTasks: () => set((state) => ({
                 tasks: state.tasks.filter(t => t.title && t.title.trim() !== "")

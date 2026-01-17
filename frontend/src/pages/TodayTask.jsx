@@ -120,10 +120,21 @@ const TodayTask = () => {
 
     const handleEndDay = async () => {
         cleanupEmptyTasks();
-        // Sync to backend before ending
-        await syncTasksToBackend();
-        endDay(currentUserId);
-        triggerToast("Day Ended! Completed tasks archived. 🌙");
+
+        // 1. Sync to backend before ending
+        const syncResult = await syncTasksToBackend();
+        if (!syncResult.success) {
+            triggerToast("Failed to sync tasks. Cannot end day. ❌");
+            return;
+        }
+
+        // 2. End Day (now async)
+        try {
+            await endDay(currentUserId);
+            triggerToast("Day Ended! Completed tasks archived. 🌙");
+        } catch (error) {
+            triggerToast("Failed to end day on server. ❌");
+        }
     };
 
     const handleUpdateTasks = async () => {

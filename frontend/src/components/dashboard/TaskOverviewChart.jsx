@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTaskStore } from '../../store/useTaskStore';
+import { useTaskHistoryStore } from '../../store/useTaskHistoryStore';
 import { MdOutlineDateRange } from "react-icons/md";
 import { FaAngleDown } from "react-icons/fa";
 
@@ -26,7 +27,8 @@ const CalendarCheckIcon = ({ className }) => (
 );
 
 const TaskOverviewChart = ({ userId }) => {
-    const { getStats, getGlobalStats, tasks, history, fetchTodaysData } = useTaskStore();
+    const { tasks, fetchTodaysData } = useTaskStore();
+    const { history: apiHistory, fetchHistory } = useTaskHistoryStore();
 
     // State for the reference date (End of the 7-day window)
     const [selectedDate, setSelectedDate] = React.useState(new Date());
@@ -37,122 +39,140 @@ const TaskOverviewChart = ({ userId }) => {
         fetchTodaysData();
     }, []);
 
-    // --- Data Processing for Donut Chart (Total Stats) ---
-    // Revert to specific user stats (or global if explicit 'all' is passed, but Dashboard now passes specific ID)
-    const stats = useMemo(() => {
-        return userId === 'all' ? getGlobalStats() : getStats(userId);
-    }, [userId, tasks, history]);
+    // Fetch history when selectedDate changes
+    // We fetch data around the selected date. 
+    // Ideally we should ensure we have data for the sliding window. 
+    // Sending the selected date to the backend.
+    useEffect(() => {
+        if (selectedDate) {
+            const dateStr = selectedDate.toISOString().split('T')[0];
+            fetchHistory(dateStr, userId === 'all' ? null : userId);
+        }
+    }, [selectedDate, userId, fetchHistory]);
 
-    // Donut Data
-    const donutData = [
-        { name: 'Completed', value: stats.completed, color: '#4ade80' }, // Green
-        { name: 'In Progress', value: stats.inProgress, color: '#fbbf24' }, // Orange
-        { name: 'Pending', value: stats.pending, color: '#3b82f6' },   // Blue
-    ].filter(d => d.value > 0);
+    // --- Helper to filter history by user ---
+    const getFilteredHistory = (history) => {
+        if (userId === 'all') return history;
+        return history.filter(h => h.userId === userId || (!h.userId && userId === 'dev-default'));
+    };
 
-    const isEmpty = donutData.length === 0;
-    const chartData = isEmpty ? [{ name: 'No Data', value: 1, color: '#e5e7eb' }] : donutData;
-
-
-    // --- Data Processing for Bar Chart (Last 7 Days) ---
-    const barData = useMemo(() => {
+    // Calculate the 7-day window
+    const dateWindow = useMemo(() => {
         const days = [];
-        // Generate 7 days ending at selectedDate
         const endDate = new Date(selectedDate);
-
         for (let i = 6; i >= 0; i--) {
             const d = new Date(endDate);
             d.setDate(d.getDate() - i);
             days.push(d);
         }
+        return days;
+    }, [selectedDate]);
 
-        return days.map(date => {
-            // Force Month/Day to be in IST
-            const month = date.toLocaleDateString('en-IN', { month: 'short', timeZone: 'Asia/Kolkata' });
-            const day = date.toLocaleDateString('en-IN', { day: 'numeric', timeZone: 'Asia/Kolkata' });
-            const year = date.toLocaleDateString('en-IN', { year: 'numeric', timeZone: 'Asia/Kolkata' });
+    // --- Data Processing for 7-Day Stats (Donut & Bar) ---
+    // We calculate everything based on the 7-day window to ensure consistency
+    const { stats, barData } = useMemo(() => {
+        const filteredHistory = getFilteredHistory(apiHistory);
+        const processedDays = [];
 
-            const dateStr = `${month} ${day}, ${year}`; // Format: Jan 7, 2026 (matching display style but using IST values)
+        let totalCompleted = 0;
+        let totalInProgress = 0;
+        let totalPending = 0;
 
-            // For matching with "07 Jan 2026" (Store format)
+        dateWindow.forEach(date => {
+            const monthShort = date.toLocaleDateString('en-IN', { month: 'short' });
+            const dayNum = date.getDate();
+            const year = date.getFullYear();
+            const shortDate = `${monthShort} ${dayNum}`; // "Jan 1"
+
+            // Legacy/Store Date Format "01 Jan 2026"
             const storeFormat = date.toLocaleDateString('en-IN', {
                 day: '2-digit', month: 'short', year: 'numeric',
                 timeZone: 'Asia/Kolkata'
             });
+            // ISO Date Format
+            const mm = String(date.getMonth() + 1).padStart(2, '0');
+            const dd = String(date.getDate()).padStart(2, '0');
+            const isoDate = `${year}-${mm}-${dd}`;
 
-            // Revert format: Jan 6
-            const shortDate = `${month} ${day}`;
+            // Find history for this specific day
+            const historyEntry = filteredHistory.find(h =>
+                h.date === storeFormat || h.rawDate === isoDate
+            );
 
-            // 1. Find history for this date
-            const historyEntries = history.filter(h => {
-                const isUserMatch = userId === 'all'
-                    ? true
-                    : (h.userId === userId || (!h.userId && userId === 'dev-default'));
-                if (!isUserMatch) return false;
+            let dayCompleted = 0;
+            let dayInProgress = 0;
+            let dayPending = 0;
 
-                // Match against Standard IST format "07 Jan 2026" OR Legacy "Jan 7, 2026"
-                if (h.date === storeFormat) return true;
-                if (h.date === dateStr) return true;
+            if (historyEntry) {
+                (historyEntry.tasks || []).forEach(t => {
+                    const s = (t.status || '').toLowerCase();
+                    if (s === 'completed') dayCompleted++;
+                    else if (s === 'in progress' || s === 'in-progress' || s === 'in-progress') dayInProgress++;
+                    else dayPending++;
+                });
+            }
 
-                // Fallback for messy legacy dates - convert to IST string
-                const hDate = new Date(h.date);
-                if (!isNaN(hDate.getTime())) {
-                    const hIST = hDate.toLocaleDateString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                        timeZone: 'Asia/Kolkata'
-                    });
-                    return hIST === storeFormat;
-                }
-                return false;
-            });
+            // Merge 'Today' if applicable and not in history
+            const now = new Date();
+            const isToday =
+                date.getDate() === now.getDate() &&
+                date.getMonth() === now.getMonth() &&
+                date.getFullYear() === now.getFullYear();
 
-            // 2. Counts from history
-            let completed = 0;
-            let inProgress = 0;
-            let pending = 0;
-
-            historyEntries.forEach(entry => {
-                completed += entry.tasks.filter(t => t.status === 'Completed').length;
-                inProgress += entry.tasks.filter(t => t.status === 'In Progress').length;
-                pending += entry.tasks.filter(t => t.status === 'Pending').length;
-            });
-
-            // 3. For "Today", use current active tasks
-            // Check if 'date' is effectively 'Today' in IST
-            const nowIST = new Date().toLocaleDateString('en-IN', {
-                day: '2-digit', month: 'short', year: 'numeric',
-                timeZone: 'Asia/Kolkata'
-            });
-
-            if (storeFormat === nowIST) {
-                // If 'all', use all active tasks, else filter by userId
+            if (isToday && !historyEntry) {
                 const currentTasks = userId === 'all'
                     ? tasks
                     : tasks.filter(t => t.userId === userId || (!t.userId && userId === 'dev-default'));
 
-                completed += currentTasks.filter(t => t.status === 'Completed').length;
-                inProgress += currentTasks.filter(t => t.status === 'In Progress').length;
-                pending += currentTasks.filter(t => t.status === 'Pending').length;
+                currentTasks.forEach(t => {
+                    const s = (t.status || '').toLowerCase();
+                    if (s === 'completed') dayCompleted++;
+                    else if (s === 'in progress' || s === 'in-progress' || s === 'in-progress') dayInProgress++;
+                    else dayPending++;
+                });
             }
 
-            return {
-                name: shortDate,
-                completed: completed,
-                inProgress: inProgress,
-                pending: pending,
-                total: completed + inProgress + pending
-            };
-        });
-    }, [userId, tasks, history, selectedDate]);
+            // Update Totals
+            totalCompleted += dayCompleted;
+            totalInProgress += dayInProgress;
+            totalPending += dayPending;
 
-    // Calculate totals for the bottom list
-    const barTotals = useMemo(() => {
-        return barData.reduce((acc, curr) => ({
-            completed: acc.completed + curr.completed,
-            inProgress: acc.inProgress + curr.inProgress,
-            pending: acc.pending + curr.pending
-        }), { completed: 0, inProgress: 0, pending: 0 });
-    }, [barData]);
+            processedDays.push({
+                name: shortDate,
+                dayOfMonth: dayNum,
+                completed: dayCompleted,
+                inProgress: dayInProgress,
+                pending: dayPending,
+                total: dayCompleted + dayInProgress + dayPending
+            });
+        });
+
+        return {
+            stats: {
+                completed: totalCompleted,
+                inProgress: totalInProgress,
+                pending: totalPending,
+                total: totalCompleted + totalInProgress + totalPending
+            },
+            barData: processedDays
+        };
+
+    }, [userId, tasks, apiHistory, dateWindow]);
+
+
+    // Donut Data
+    const donutData = [
+        { name: 'Completed', value: stats.completed, color: '#4ade80' },
+        { name: 'In Progress', value: stats.inProgress, color: '#fbbf24' },
+        { name: 'Pending', value: stats.pending, color: '#3b82f6' },
+    ].filter(d => d.value > 0);
+
+    const isEmpty = donutData.length === 0;
+    const chartData = isEmpty ? [{ name: 'No Data', value: 1, color: '#e5e7eb' }] : donutData;
+
+    // Bar Totals (For Bottom List)
+    // In this 7-day view, stats and barTotals are identical as they cover the same range
+    const barTotals = stats;
 
 
     // Styles matching the image
@@ -184,7 +204,17 @@ const TaskOverviewChart = ({ userId }) => {
         </div>
     );
 
-    const dateRange = `${barData[0].name}, ${new Date(selectedDate).getFullYear()} - ${barData[barData.length - 1].name}, ${new Date(selectedDate).getFullYear()}`;
+    // Display Header: Date Range
+    // "Jan 1, 2026 - Jan 7, 2026"
+    const startDate = dateWindow[0];
+    const endDate = dateWindow[dateWindow.length - 1];
+
+    // Helper to format date for header
+    const formatHeaderDate = (d) => {
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+
+    const headerDateDisplay = `${formatHeaderDate(startDate)} - ${formatHeaderDate(endDate)}`;
 
     const handleDateClick = () => {
         if (dateInputRef.current) {
@@ -198,7 +228,6 @@ const TaskOverviewChart = ({ userId }) => {
         }
     };
 
-
     return (
         <div
             className="bg-white rounded-[24px] p-4 md:p-3 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] hover:shadow-[0_10px_20px_5px_rgba(0,0,0,0.20)] transition-shadow duration-300 w-full h-full flex flex-col border border-gray-100"
@@ -210,7 +239,7 @@ const TaskOverviewChart = ({ userId }) => {
                     onClick={handleDateClick}
                     className="bg-white border border-gray-200 rounded-lg px-3 py-1 flex items-center gap-2 text-sm text-gray-600 font-medium shadow-sm hover:border-gray-300 transition-colors cursor-pointer relative"
                 ><MdOutlineDateRange />
-                    <span>  {dateRange}</span>
+                    <span>{headerDateDisplay}</span>
                     <span className="text-gray-400 text-m"><FaAngleDown /></span>
 
                     {/* Hidden Date Input */}
@@ -225,7 +254,7 @@ const TaskOverviewChart = ({ userId }) => {
             </div>
 
             <div className="flex flex-col lg:flex-row gap-8 flex-grow">
-                {/* LEFT: Donut Chart Section */}
+                {/* LEFT: Donut Chart Section (7-Day Stats) */}
                 <div className="flex-1 flex flex-col items-center justify-center">
                     <div className="relative w-48 h-48 my-4">
                         <ResponsiveContainer width="100%" height="100%">
@@ -251,7 +280,7 @@ const TaskOverviewChart = ({ userId }) => {
                         </div>
                     </div>
 
-                    {/* Stats List */}
+                    {/* Stats List (7-Day) */}
                     <div className="w-full max-w-[200px] mt-2 space-y-2">
                         <StatRow label="Completed" value={stats.completed} color={COLORS.completed} />
                         <StatRow label="In Progress" value={stats.inProgress} color={COLORS.inProgress} />

@@ -46,6 +46,32 @@ export const useUsersApiStore = create((set, get) => ({
         }
     },
 
+    // Fetch ALL users (for dropdowns/reports)
+    fetchAllUsers: async () => {
+        set({ isLoading: true, error: null });
+        try {
+            const response = await api.post('/users/getAllUsers');
+
+            if (response.data && response.data.data) {
+                set({
+                    users: response.data.data || [],
+                    totalPages: 1, // Reset pagination info relevant to list view
+                    totalDocs: response.data.data.length || 0,
+                    currentPage: 1,
+                    isLoading: false
+                });
+            } else {
+                set({ users: [], isLoading: false });
+            }
+        } catch (error) {
+            console.error('Failed to fetch all users:', error);
+            set({
+                isLoading: false,
+                error: error.message || 'Failed to fetch all users'
+            });
+        }
+    },
+
     // Save user (create or update)
     saveUser: async (userData) => {
         set({ isSaving: true, error: null, successMessage: null });

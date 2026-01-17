@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSOPStore } from '../store/useSOPStore';
 import { useUserStore } from '../store/useUserStore';
 import { useMasterStore } from '../store/useMasterStore';
@@ -22,9 +22,15 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 
 const SOPDocument = () => {
-    const { sopDocuments, addSOPDocument, updateSOPDocument, deleteSOPDocument } = useSOPStore();
+    const { sopDocuments, fetchSOPs, addSOPDocument, updateSOPDocument, deleteSOPDocument, uploadSOPPDF } = useSOPStore();
     const { role, currentUser } = useUserStore();
-    const { users } = useMasterStore();
+    const { users, fetchUsers } = useMasterStore();
+
+    // Fetch users and SOP documents from API on mount
+    useEffect(() => {
+        fetchUsers();
+        fetchSOPs();
+    }, [fetchUsers, fetchSOPs]);
 
     // Check if user has admin/HR privileges
     const canManageSOP = role === 'admin' || role === 'hr' || role === 'HR';
@@ -62,7 +68,8 @@ const SOPDocument = () => {
                 pdfName: doc.pdfName || '',
                 visibilityType: doc.visibilityType || 'ALL',
                 allowedRoles: doc.allowedRoles || [],
-                allowedUsers: doc.allowedUsers || []
+                // Extract user IDs from user objects if they exist
+                allowedUsers: (doc.allowedUsers || []).map(u => typeof u === 'string' ? u : u._id || u.id)
             });
         } else {
             setEditingDoc(null);
@@ -103,27 +110,23 @@ const SOPDocument = () => {
                 return;
             }
 
-            if (file.size > 5 * 1024 * 1024) { // 5MB limit
-                setErrors({ ...errors, pdf: 'File size must be less than 5MB' });
+            if (file.size > 10 * 1024 * 1024) { // 10MB limit for server upload
+                setErrors({ ...errors, pdf: 'File size must be less than 10MB' });
                 e.target.value = '';
                 return;
             }
 
-            // Convert file to base64 for storage
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setFormData({
-                    ...formData,
-                    pdfFile: reader.result,
-                    pdfName: file.name
-                });
-                if (errors.pdf) setErrors({ ...errors, pdf: null });
-            };
-            reader.readAsDataURL(file);
+            // Store the raw file object for multer upload
+            setFormData({
+                ...formData,
+                pdfFile: file, // Store raw file, not base64
+                pdfName: file.name
+            });
+            if (errors.pdf) setErrors({ ...errors, pdf: null });
         }
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         const newErrors = {};
 
         if (!formData.title.trim()) {
@@ -147,27 +150,41 @@ const SOPDocument = () => {
             return;
         }
 
-        const docData = {
-            title: formData.title,
-            date: formData.date.format('DD MMM YYYY'),
-            pdfUrl: formData.pdfFile || (editingDoc?.pdfUrl || ''),
-            pdfName: formData.pdfName || (editingDoc?.pdfName || ''),
-
-            visibilityType: formData.visibilityType,
-            allowedRoles: formData.allowedRoles,
-            allowedUsers: formData.allowedUsers,
-            createdBy: editingDoc?.createdBy || currentUser?.name || 'Admin',
-            // Default role of creator is their current role, unless it's an edit and we want to preserve it?
-            // Usually simpler to just say 'Admin' or use their role.
-            createdByRole: editingDoc?.createdByRole || role || 'Admin'
-        };
-
         try {
+            let pdfUrl = editingDoc?.pdfUrl || '';
+            let pdfName = formData.pdfName || editingDoc?.pdfName || '';
+
+            // Upload PDF file if a new one is selected
+            if (formData.pdfFile && formData.pdfFile instanceof File) {
+                const uploadResult = await uploadSOPPDF(formData.pdfFile);
+                if (!uploadResult.success) {
+                    alert('Failed to upload PDF: ' + (uploadResult.message || 'Unknown error'));
+                    return;
+                }
+                pdfUrl = uploadResult.data.pdfUrl;
+                pdfName = uploadResult.data.pdfName;
+            }
+
+            const docData = {
+                title: formData.title,
+                pdfUrl: pdfUrl,
+                pdfName: pdfName,
+                visibilityType: formData.visibilityType,
+                allowedRoles: formData.allowedRoles,
+                allowedUsers: formData.allowedUsers,
+                createdBy: editingDoc?.createdBy || currentUser?.name || 'Admin',
+                createdByRole: editingDoc?.createdByRole || role || 'Admin'
+            };
+
+            // Only include date when creating new SOP, not when editing
+            if (!editingDoc) {
+                docData.date = formData.date.format('DD MMM YYYY');
+            }
+
             if (editingDoc) {
-                updateSOPDocument(editingDoc.id, docData);
+                await updateSOPDocument(editingDoc._id || editingDoc.id, docData);
                 setToastMessage('SOP Document updated successfully');
 
-                // Trigger Notification for Update
                 useNotificationStore.getState().addNotification({
                     title: 'SOP Document Updated',
                     message: `The SOP document "${docData.title}" has been updated by ${docData.createdBy}.`,
@@ -178,12 +195,10 @@ const SOPDocument = () => {
                     link: '/app/sop-documents',
                     actionUser: currentUser?.name || 'Admin'
                 });
-
             } else {
-                addSOPDocument(docData);
+                await addSOPDocument(docData);
                 setToastMessage('SOP Document added successfully');
 
-                // Trigger Notification for New SOP
                 useNotificationStore.getState().addNotification({
                     title: 'New SOP Document',
                     message: `A new SOP document "${docData.title}" has been added by ${docData.createdBy}.`,
@@ -199,11 +214,7 @@ const SOPDocument = () => {
             handleCloseDialog();
         } catch (error) {
             console.error("Error saving SOP:", error);
-            if (error.name === 'QuotaExceededError' || error.message.includes('quota')) {
-                alert("Failed to save: The PDF file is too large for local storage. Please try a smaller file.");
-            } else {
-                alert("Failed to save SOP Document: " + error.message);
-            }
+            alert("Failed to save SOP Document: " + error.message);
         }
     };
 
@@ -212,15 +223,20 @@ const SOPDocument = () => {
         setDeleteConfirm(null);
     };
 
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:2025';
+
     const handleDownloadPDF = (pdfUrl, pdfName) => {
+        // Handle both server paths and base64 URLs
+        const fullUrl = pdfUrl.startsWith('/uploads') ? `${API_BASE_URL}${pdfUrl}` : pdfUrl;
         const link = document.createElement('a');
-        link.href = pdfUrl;
+        link.href = fullUrl;
         link.download = pdfName;
+        link.target = '_blank';
         link.click();
     };
 
-    // Filter SOPs based on visibility rules
-    const filteredSOPs = sopDocuments.filter(doc => {
+    // Filter SOPs based on visibility rules (with null safety)
+    const filteredSOPs = (sopDocuments || []).filter(doc => {
         // Admin and HR see all SOPs
         if (canManageSOP) return true;
 
@@ -237,8 +253,11 @@ const SOPDocument = () => {
         }
 
         if (doc.visibilityType === 'USER') {
-            // Check if user's ID is in allowed users
-            return doc.allowedUsers?.includes(currentUser?.id);
+            // Check if user's ID is in allowed users (handle both string and object IDs)
+            const userId = currentUser?.id || currentUser?._id;
+            return (doc.allowedUsers || []).some(u =>
+                (typeof u === 'string' ? u : u?._id) === userId
+            );
         }
 
         return false;
@@ -301,22 +320,36 @@ const SOPDocument = () => {
                     <TableContainer component={Paper} elevation={0} sx={{
                         borderRadius: '16px',
                         border: '1px solid #e2e8f0',
-                        overflow: 'hidden'
+                        maxHeight: '500px', // Approximately 5 rows + header
+                        overflowY: 'auto',
+                        '&::-webkit-scrollbar': {
+                            width: '8px',
+                        },
+                        '&::-webkit-scrollbar-track': {
+                            backgroundColor: '#f1f5f9',
+                        },
+                        '&::-webkit-scrollbar-thumb': {
+                            backgroundColor: '#cbd5e1',
+                            borderRadius: '4px',
+                            '&:hover': {
+                                backgroundColor: '#94a3b8',
+                            },
+                        },
                     }}>
-                        <Table>
+                        <Table stickyHeader>
                             <TableHead>
                                 <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }}>Sr No</TableCell>
-                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }}>Title</TableCell>
-                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }}>Created By</TableCell>
-                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }}>Create Date</TableCell>
-                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }}>Update Date</TableCell>
-                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }}>PDF File</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }}>Sr No</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }}>Title</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }}>Created By</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }}>Create Date</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }}>Update Date</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }}>PDF File</TableCell>
 
                                     {canManageSOP && (
-                                        <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }}>Visibility</TableCell>
+                                        <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }}>Visibility</TableCell>
                                     )}
-                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem' }} align="center">Actions</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', bgcolor: '#f8fafc' }} align="center">Actions</TableCell>
                                 </TableRow>
                             </TableHead>
                             <TableBody>
@@ -335,7 +368,7 @@ const SOPDocument = () => {
                                 ) : (
                                     filteredSOPs.map((doc, index) => (
                                         <TableRow
-                                            key={doc.id}
+                                            key={doc._id || doc.id || index}
                                             sx={{
                                                 '&:hover': { bgcolor: '#f8fafc' },
                                                 transition: 'background-color 0.2s',
@@ -347,9 +380,15 @@ const SOPDocument = () => {
                                             <TableCell sx={{ color: '#1e293b', fontWeight: 600 }}>
                                                 {doc.title}
                                             </TableCell>
-                                            <TableCell sx={{ color: '#64748b', textTransform: 'capitalize' }}>{doc.createdBy || 'Admin'}</TableCell>
+                                            <TableCell sx={{ color: '#64748b', textTransform: 'capitalize' }}>
+                                                {typeof doc.createdBy === 'object' ? (doc.createdBy?.name || doc.createdByName || 'Admin') : (doc.createdBy || doc.createdByName || 'Admin')}
+                                            </TableCell>
                                             <TableCell sx={{ color: '#64748b' }}>{doc.date}</TableCell>
-                                            <TableCell sx={{ color: '#64748b' }}>{doc.updatedAt || '-'}</TableCell>
+                                            <TableCell sx={{ color: '#64748b' }}>
+                                                {doc.updatedAt && doc.createdAt && dayjs(doc.updatedAt).diff(dayjs(doc.createdAt), 'second') > 1
+                                                    ? dayjs(doc.updatedAt).format('DD MMM YYYY')
+                                                    : '-'}
+                                            </TableCell>
                                             <TableCell>
                                                 <Chip
                                                     icon={<PdfIcon />}
@@ -364,10 +403,6 @@ const SOPDocument = () => {
                                                         fontWeight: 600,
                                                         cursor: 'pointer',
                                                         '&:hover': { bgcolor: '#fde68a' }
-                                                    }}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDownloadPDF(doc.pdfUrl, doc.pdfName);
                                                     }}
                                                 />
                                             </TableCell>
@@ -437,7 +472,7 @@ const SOPDocument = () => {
                                                                 }}
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    setDeleteConfirm(doc.id);
+                                                                    setDeleteConfirm(doc._id || doc.id);
                                                                 }}
                                                             >
                                                                 <DeleteIcon fontSize="small" />
@@ -600,10 +635,12 @@ const SOPDocument = () => {
                             label="Create Date"
                             value={formData.date}
                             onChange={(newDate) => setFormData({ ...formData, date: newDate })}
+                            disabled={!!editingDoc} // Disable when editing
                             slotProps={{
                                 textField: {
                                     fullWidth: true,
-                                    InputLabelProps: { shrink: true }
+                                    InputLabelProps: { shrink: true },
+                                    helperText: editingDoc ? 'Create date cannot be changed' : ''
                                 }
                             }}
                         />
@@ -818,7 +855,7 @@ const SOPDocument = () => {
                     <Box sx={{ height: '70%', bgcolor: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                         {viewPDF && (
                             <iframe
-                                src={viewPDF.pdfUrl}
+                                src={viewPDF.pdfUrl?.startsWith('/uploads') ? `${API_BASE_URL}${viewPDF.pdfUrl}` : viewPDF.pdfUrl}
                                 style={{ width: '100%', height: '100%', border: 'none' }}
                                 title={viewPDF.title}
                             />
@@ -840,12 +877,16 @@ const SOPDocument = () => {
                                         </Box>
                                         <Box>
                                             <Typography variant="caption" display="block" fontWeight="600">Update Date</Typography>
-                                            <Typography variant="body2">{viewPDF?.updatedAt || '-'}</Typography>
+                                            <Typography variant="body2">
+                                                {viewPDF?.updatedAt && viewPDF?.createdAt && dayjs(viewPDF.updatedAt).diff(dayjs(viewPDF.createdAt), 'second') > 1
+                                                    ? dayjs(viewPDF.updatedAt).format('DD MMM YYYY')
+                                                    : '-'}
+                                            </Typography>
                                         </Box>
                                         <Box>
                                             <Typography variant="caption" display="block" fontWeight="600">Created By</Typography>
                                             <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
-                                                {viewPDF?.createdBy || 'Admin'}
+                                                {typeof viewPDF?.createdBy === 'object' ? (viewPDF?.createdBy?.name || viewPDF?.createdByName || 'Admin') : (viewPDF?.createdBy || viewPDF?.createdByName || 'Admin')}
                                             </Typography>
                                         </Box>
                                     </Stack>

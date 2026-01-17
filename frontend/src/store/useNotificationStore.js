@@ -11,6 +11,7 @@ export const useNotificationStore = create(
                     id: Date.now(),
                     timestamp: new Date().toISOString(),
                     readBy: [], // Array of user IDs who have read this
+                    dismissedBy: [], // Array of user IDs who have dismissed this
                     ...notification
                 }, ...state.notifications]
             })),
@@ -30,6 +31,16 @@ export const useNotificationStore = create(
                 }))
             })),
 
+            // Dismiss notification for a specific user (doesn't remove it globally)
+            dismissNotification: (notificationId, userId) => set((state) => ({
+                notifications: state.notifications.map(n =>
+                    n.id === notificationId
+                        ? { ...n, dismissedBy: [...(new Set([...(n.dismissedBy || []), userId]))] }
+                        : n
+                )
+            })),
+
+            // Only for complete removal (admin only, if needed)
             removeNotification: (id) => set((state) => ({
                 notifications: state.notifications.filter(n => n.id !== id)
             })),

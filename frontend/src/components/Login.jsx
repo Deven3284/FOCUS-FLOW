@@ -171,8 +171,10 @@ export default function SignIn() {
                         navigate('/app/admin/dashboard');
                     } else {
                         navigate('/app/dashboard');
+
+
                     }
-                }, 1200);
+                }, 1000);
             } else {
                 // API returned success:false or no data (validation error or invalid credentials)
                 setIsLoading(false);

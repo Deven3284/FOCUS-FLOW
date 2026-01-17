@@ -47,7 +47,6 @@ function App() {
 
           {/* Public Login Pages */}
           <Route path="/app/login" element={<PublicRoute><Login /></PublicRoute>} />
-          {/* <Route path="/app/admin/login" element={<PublicRoute><AdminLogin /></PublicRoute>} /> */}
 
           {/* User Routes - Wrapped in UserRoute */}
           <Route path="/app" element={<UserRoute><Layout /></UserRoute>}>

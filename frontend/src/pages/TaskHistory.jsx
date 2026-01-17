@@ -31,7 +31,7 @@ const TaskHistory = () => {
     const { users: localUsers } = useMasterStore();
 
     // Use API users store to get real user IDs from database
-    const { users: apiUsers, fetchUsers } = useUsersApiStore();
+    const { users: apiUsers, fetchAllUsers } = useUsersApiStore();
 
     // Use API users if available (they have correct _id), fallback to local
     const users = useMemo(() => apiUsers.length > 0 ? apiUsers.map(u => ({
@@ -54,13 +54,13 @@ const TaskHistory = () => {
 
     // Fetch users from API on mount (to get correct _id values)
     useEffect(() => {
-        if (role === 'admin' && apiUsers.length === 0) {
-            fetchUsers(1, 100, '', ''); // Fetch all users
+        if (role === 'admin') {
+            fetchAllUsers(); // Fetch all users for the dropdown
         }
     }, [role]);
 
-    // Use API history if available, fallback to local
-    const history = apiHistory.length > 0 ? apiHistory : localHistory;
+    // Use API history. Local history is deprecated for this view to prevent stale data.
+    const history = apiHistory;
 
     const [selectedSession, setSelectedSession] = useState(null);
     const [openBackDayTask, setOpenBackDayTask] = useState(false);
@@ -73,7 +73,7 @@ const TaskHistory = () => {
 
     const [backTaskData, setBackTaskData] = useState({
         title: '',
-        priority: 'Medium',
+        priority: 'High',
         workType: 'All',
         date: dayjs().format('YYYY-MM-DD'),
         startTime: '09:00',
@@ -89,32 +89,48 @@ const TaskHistory = () => {
     // Report Dialog State
     const [openReportDialog, setOpenReportDialog] = useState(false);
     const [reportConfig, setReportConfig] = useState({
-        month: currentDate.getMonth() + 1, // Backend expects 1-12
+        month: currentDate.getMonth(), // Backend expects 1-12
         year: currentDate.getFullYear(),
         workType: 'All'
     });
 
-    // Generate Year Options Dynamically
+    // Generate Year Options Dynamically (2022 to current year)
     const currentYear = new Date().getFullYear();
-    const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
+    const startYear = 2022;
+    const yearOptions = Array.from(
+        { length: currentYear - startYear + 1 },
+        (_, i) => currentYear - i
+    );
 
     const months = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
     ];
 
-    // Validate historyFilterUserId - if it doesn't exist in users list (e.g. switching from local to api), reset it
+    // Filter users based on Work Type
+    const filteredUsers = useMemo(() => {
+        if (workTypeFilter === 'All') return users;
+        return users.filter(user =>
+            user.workType && user.workType.toLowerCase() === workTypeFilter.toLowerCase()
+        );
+    }, [users, workTypeFilter]);
+
+    // Validate historyFilterUserId - if it doesn't exist in filtered users list, reset it
     useEffect(() => {
-        if (role === 'admin' && historyFilterUserId && users.length > 0) {
-            const userExists = users.find(u => u.id === historyFilterUserId);
+        if (role === 'admin' && filteredUsers.length > 0) {
+            // Check if current selected user is in the filtered list
+            const userExists = filteredUsers.find(u => u.id === historyFilterUserId);
+
             if (!userExists) {
-                // If current filter ID is not in the list, default to first user or clear
-                const newId = users[0].id;
-                console.log('Resetting invalid historyFilterUserId:', historyFilterUserId, 'to:', newId);
+                // If current filter ID is not in the list, default to first user
+                const newId = filteredUsers[0].id;
+                // console.log('Resetting historyFilterUserId to first match:', newId);
                 setHistoryFilterUserId(newId);
             }
+        } else if (role === 'admin' && filteredUsers.length === 0) {
+            // careful not to unset if loading, but if truly empty list..
         }
-    }, [users, historyFilterUserId, role, setHistoryFilterUserId]);
+    }, [filteredUsers, historyFilterUserId, role, setHistoryFilterUserId]);
 
     // Fetch history from API on mount and when filters change
     useEffect(() => {
@@ -184,7 +200,7 @@ const TaskHistory = () => {
 
             setBackTaskData({
                 title: '',
-                priority: 'Medium',
+                priority: 'High',
                 workType: 'All',
                 date: dayjs().format('YYYY-MM-DD'),
                 startTime: '09:00',
@@ -203,8 +219,14 @@ const TaskHistory = () => {
     const filteredHistory = useMemo(() => {
         if (!history || history.length === 0) return [];
 
-        // Backend already filters by user and month, so we only need to apply workType filter
         let result = history;
+
+        // Filter by selected user (admin mode) - ensure we only show selected user's data
+        if (role === 'admin' && historyFilterUserId) {
+            result = result.filter(session =>
+                String(session.userId) === String(historyFilterUserId)
+            );
+        }
 
         // Work Type Filter (only for admin)
         if (role === 'admin' && workTypeFilter !== 'All') {
@@ -214,13 +236,18 @@ const TaskHistory = () => {
                     const sessionOwner = users.find(u => String(u.id) === String(session.userId));
                     sessionType = sessionOwner?.workType || 'Onsite';
                 }
-                return sessionType === workTypeFilter;
+                return sessionType && sessionType.toLowerCase() === workTypeFilter.toLowerCase();
             });
         }
 
-        // Already sorted by backend (by _id descending), no need to re-sort
-        return result;
-    }, [history, role, workTypeFilter, users]);
+        // Sort by date descending (newest first)
+        // Use rawDate if available for accurate sorting, otherwise fallback to date string
+        return result.sort((a, b) => {
+            const dateA = new Date(a.rawDate || a.date);
+            const dateB = new Date(b.rawDate || b.date);
+            return dateB - dateA;
+        });
+    }, [history, role, workTypeFilter, users, historyFilterUserId]);
 
     const getPriorityColor = (priority) => {
         const p = (priority || '').toLowerCase();
@@ -235,8 +262,8 @@ const TaskHistory = () => {
     const getStatusParams = (status) => {
         const s = (status || '').toLowerCase();
         if (s === 'completed') return { color: '#000000', bg: '#86efac' };
-        if (s === 'in progress') return { color: '#000000', bg: '#93c5fd' };
-        if (s === 'pending') return { color: '#000000', bg: '#fca5a5' };
+        if (s === 'in progress' || s === 'in-progress') return { color: '#000000', bg: '#fcd34d' };
+        if (s === 'pending') return { color: '#000000', bg: '#93c5fd' };
         return { color: '#000000', bg: '#f3f4f6' };
     };
 
@@ -306,16 +333,16 @@ const TaskHistory = () => {
         }
     }, [users, role, historyFilterUserId, setHistoryFilterUserId]);
 
-    // Sync Work Type with Selected User
-    React.useEffect(() => {
-        if (role === 'admin' && historyFilterUserId) {
-            const user = users.find(u => String(u.id) === String(historyFilterUserId));
-            if (user && user.workType) {
-                // setWorkTypeFilter(user.workType); // Removed: Filter UI is gone
-                setBackTaskData(prev => ({ ...prev, workType: user.workType }));
-            }
-        }
-    }, [historyFilterUserId, users, role]);
+    // Sync Work Type with Selected User - REMOVED to allow "All" default
+    // React.useEffect(() => {
+    //     if (role === 'admin' && historyFilterUserId) {
+    //         const user = users.find(u => String(u.id) === String(historyFilterUserId));
+    //         if (user && user.workType) {
+    //             // setWorkTypeFilter(user.workType); // Removed: Filter UI is gone
+    //             setBackTaskData(prev => ({ ...prev, workType: user.workType }));
+    //         }
+    //     }
+    // }, [historyFilterUserId, users, role]);
 
     return (
         <Box sx={{
@@ -412,20 +439,37 @@ const TaskHistory = () => {
 
                     {/* Admin User Select */}
                     {role === 'admin' && (
-                        <div className="relative group">
-                            <select
-                                value={historyFilterUserId}
-                                onChange={(e) => setHistoryFilterUserId(e.target.value)}
-                                className="appearance-none bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer min-w-[200px]"
-                            >
-                                {users.map((user) => (
-                                    <option key={user.id} value={user.id}>
-                                        {user.name} ({user.role === 'Admin' ? 'Admin' : 'Developer'})
-                                    </option>
-                                ))}
-                            </select>
-                            <FiFilter className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
-                        </div>
+                        <Box sx={{ display: 'flex', gap: 2 }}>
+                            {/* Work Type Filter */}
+                            <div className="relative group">
+                                <select
+                                    value={workTypeFilter}
+                                    onChange={(e) => setWorkTypeFilter(e.target.value)}
+                                    className="appearance-none bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer min-w-[140px]"
+                                >
+                                    <option value="All">All Types</option>
+                                    <option value="Onsite">Onsite</option>
+                                    <option value="Remote">Remote</option>
+                                </select>
+                                <FiFilter className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
+                            </div>
+
+                            {/* User Filter */}
+                            <div className="relative group">
+                                <select
+                                    value={historyFilterUserId}
+                                    onChange={(e) => setHistoryFilterUserId(e.target.value)}
+                                    className="appearance-none bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer min-w-[200px]"
+                                >
+                                    {filteredUsers.map((user) => (
+                                        <option key={user.id} value={user.id}>
+                                            {user.name} ({user.role === 'Admin' ? 'Admin' : 'Developer'})
+                                        </option>
+                                    ))}
+                                </select>
+                                <FiUser className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
+                            </div>
+                        </Box>
                     )}
 
                 </Box>
@@ -755,7 +799,35 @@ const TaskHistory = () => {
                         />
 
                         <Grid container spacing={2}>
-                            <Grid item xs={6}>
+                            <Grid item xs={4} width={"7vw"}>
+                                <FormControl fullWidth>
+                                    <InputLabel>Work Type</InputLabel>
+                                    <Select
+                                        value={backTaskData.workType}
+                                        label="Work Type"
+                                        onChange={(e) => {
+                                            const newType = e.target.value;
+                                            // Reset user if they don't match the new type
+                                            const filtered = users.filter(u =>
+                                                newType === 'All' || (u.workType && u.workType.toLowerCase() === newType.toLowerCase())
+                                            );
+                                            const currentIsValid = filtered.find(u => u.id === backTaskData.userId);
+
+                                            setBackTaskData({
+                                                ...backTaskData,
+                                                workType: newType,
+                                                userId: currentIsValid ? backTaskData.userId : (filtered.length > 0 ? filtered[0].id : '')
+                                            });
+                                        }}
+                                        sx={{ borderRadius: '12px' }}
+                                    >
+                                        <MenuItem value="All">All</MenuItem>
+                                        <MenuItem value="Onsite">Onsite</MenuItem>
+                                        <MenuItem value="Remote">Remote</MenuItem>
+                                    </Select>
+                                </FormControl>
+                            </Grid>
+                            <Grid item xs={4}>
                                 <FormControl fullWidth>
                                     <InputLabel>Priority</InputLabel>
                                     <Select
@@ -770,8 +842,8 @@ const TaskHistory = () => {
                                     </Select>
                                 </FormControl>
                             </Grid>
-                            <Grid item xs={6}>
-                                <FormControl className='w-50'>
+                            <Grid item xs={4}>
+                                <FormControl fullWidth>
                                     <InputLabel>Assigned User</InputLabel>
                                     <Select
                                         value={backTaskData.userId}
@@ -779,11 +851,17 @@ const TaskHistory = () => {
                                         onChange={(e) => setBackTaskData({ ...backTaskData, userId: e.target.value })}
                                         sx={{ borderRadius: '12px' }}
                                     >
-                                        {users.map((user) => (
-                                            <MenuItem key={user.id} value={user.id}>
-                                                {user.name}
-                                            </MenuItem>
-                                        ))}
+                                        {users
+                                            .filter(user =>
+                                                backTaskData.workType === 'All' ||
+                                                (user.workType && user.workType.toLowerCase() === backTaskData.workType.toLowerCase())
+                                            )
+                                            .map((user) => (
+                                                <MenuItem key={user.id} value={user.id}>
+                                                    {user.name}
+                                                </MenuItem>
+                                            ))
+                                        }
                                     </Select>
                                 </FormControl>
                             </Grid>
@@ -838,8 +916,8 @@ const TaskHistory = () => {
                                 This task will be marked as "Completed" automatically.
                             </Typography>
                         </Box>
-                    </Stack>
-                </DialogContent>
+                    </Stack >
+                </DialogContent >
                 <DialogActions sx={{ p: 3 }}>
                     <Button onClick={() => setOpenBackDayTask(false)} sx={{ color: '#64748b', fontWeight: 600 }}>Cancel</Button>
                     <Button
@@ -850,7 +928,7 @@ const TaskHistory = () => {
                         Save Task
                     </Button>
                 </DialogActions>
-            </Dialog>
+            </Dialog >
 
         </Box >
     );

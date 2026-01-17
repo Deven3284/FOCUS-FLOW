@@ -86,7 +86,7 @@ export default function Dashboard() {
                         <Grid item xs={6} sm={6} md={3}>
                             <StatsCard
                                 title="Total Users"
-                                count={apiUsersCount || users.length}
+                                count={apiUsersCount ?? users.length}
                                 icon={<PeopleAltIcon />}
                                 color="#9c27b0"
                                 bgColor="#f3e5f5"
@@ -96,7 +96,7 @@ export default function Dashboard() {
                     <Grid item xs={6} sm={6} md={3}>
                         <StatsCard
                             title="Total Tasks"
-                            count={apiTotalTasks || stats.total}
+                            count={apiTotalTasks ?? stats.total}
                             icon={<AssignmentIcon />}
                             color="#1976d2"
                             bgColor="#e3f2fd"
@@ -105,7 +105,7 @@ export default function Dashboard() {
                     <Grid item xs={6} sm={6} md={3}>
                         <StatsCard
                             title="Completed"
-                            count={apiCompletedTasks || stats.completed}
+                            count={apiCompletedTasks ?? stats.completed}
                             icon={<CheckCircleIcon />}
                             color="#2e7d32"
                             bgColor="#e8f5e9"
@@ -114,7 +114,7 @@ export default function Dashboard() {
                     <Grid item xs={6} sm={6} md={3}>
                         <StatsCard
                             title="Pending"
-                            count={apiPendingTasks || stats.pending}
+                            count={apiPendingTasks ?? stats.pending}
                             icon={<PendingActionsIcon />}
                             color="#ed6c02"
                             bgColor="#fff3e0"
@@ -123,7 +123,7 @@ export default function Dashboard() {
                     <Grid item xs={6} sm={6} md={3}>
                         <StatsCard
                             title="In Progress"
-                            count={apiInProgressTasks || stats.inProgress}
+                            count={apiInProgressTasks ?? stats.inProgress}
                             icon={<BoltIcon />}
                             color="#0288d1"
                             bgColor="#e1f5fe"
@@ -194,45 +194,24 @@ export default function Dashboard() {
                     >
                         Overview
                     </Button>
-                    {role === 'admin' ? (
-                        <Button
-                            variant={view === 'reports' ? "contained" : "outlined"}
-                            onClick={() => setView('reports')}
-                            startIcon={<BarChartIcon />}
-                            sx={{
-                                textTransform: 'none',
-                                borderRadius: '12px',
-                                height: '40px',
-                                px: 3,
-                                fontWeight: 600,
-                                flex: { xs: '1 1 auto', md: 'none' },
-                                borderWidth: '1.5px',
-                                borderColor: view === 'reports' ? 'primary.main' : 'gray.300',
-                                '&:hover': { borderWidth: '1.5px' }
-                            }}
-                        >
-                            Reports
-                        </Button>
-                    ) : (
-                        <Button
-                            variant="outlined"
-                            onClick={() => navigate(`${basePath}/history`)}
-                            startIcon={<HistoryIcon />}
-                            sx={{
-                                textTransform: 'none',
-                                borderRadius: '12px',
-                                height: '40px',
-                                px: 3,
-                                fontWeight: 600,
-                                flex: { xs: '1 1 auto', md: 'none' },
-                                borderWidth: '1.5px',
-                                borderColor: 'gray.300',
-                                '&:hover': { borderWidth: '1.5px' }
-                            }}
-                        >
-                            Task History
-                        </Button>
-                    )}
+                    <Button
+                        variant="outlined"
+                        onClick={() => navigate(`${basePath}/history`)}
+                        startIcon={<HistoryIcon />}
+                        sx={{
+                            textTransform: 'none',
+                            borderRadius: '12px',
+                            height: '40px',
+                            px: 3,
+                            fontWeight: 600,
+                            flex: { xs: '1 1 auto', md: 'none' },
+                            borderWidth: '1.5px',
+                            borderColor: 'gray.300',
+                            '&:hover': { borderWidth: '1.5px' }
+                        }}
+                    >
+                        Task History
+                    </Button>
                     {role === 'admin' && (
                         <Button
                             variant={view === 'devReports' ? "contained" : "outlined"}

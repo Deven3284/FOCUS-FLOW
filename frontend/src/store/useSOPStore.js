@@ -26,13 +26,8 @@ export const useSOPStore = create((set, get) => ({
     // Create new SOP (Admin/HR only)
     addSOPDocument: async (document) => {
         try {
-            const response = await api.post('/users/createSOP', {
-                title: document.title,
-                description: document.description || '',
-                content: document.content,
-                assignedTo: document.assignedTo,
-                priority: document.priority || 'medium'
-            });
+            // Pass the full document payload to the backend
+            const response = await api.post('/users/createSOP', document);
             if (response.data && response.data.data) {
                 set(state => ({
                     sopDocuments: [response.data.data, ...state.sopDocuments]
@@ -126,6 +121,28 @@ export const useSOPStore = create((set, get) => ({
             }
         } catch (error) {
             console.error("Failed to fetch unread count:", error);
+        }
+    },
+
+    // Upload SOP PDF file (returns pdfUrl and pdfName)
+    uploadSOPPDF: async (file) => {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await api.post('/users/uploadSOPPDF', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+
+            if (response.data && response.data.data) {
+                return { success: true, data: response.data.data };
+            }
+            return { success: false, message: response.data?.message || 'Failed to upload PDF' };
+        } catch (error) {
+            console.error("Failed to upload PDF:", error);
+            return { success: false, message: error.message };
         }
     },
 

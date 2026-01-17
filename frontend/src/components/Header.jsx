@@ -28,7 +28,7 @@ const Header = () => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-    const { notifications, markAsRead, removeNotification } = useNotificationStore();
+    const { notifications, markAsRead, dismissNotification } = useNotificationStore();
 
     const [mobileOpen, setMobileOpen] = useState(false);
     const [anchorEl, setAnchorEl] = useState(null);
@@ -36,6 +36,9 @@ const Header = () => {
 
     // Filter Notifications
     const myNotifications = notifications.filter(n => {
+        // Filter out notifications dismissed by current user
+        if (n.dismissedBy?.includes(currentUser?.id)) return false;
+
         // Filter out notifications created by self (optional, but requested implicitly)
         // if (n.actionUser === (currentUser?.name || 'Admin')) return false;
 
@@ -291,7 +294,7 @@ const Header = () => {
                                                 size="small"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    removeNotification(notification.id);
+                                                    dismissNotification(notification.id, currentUser?.id);
                                                 }}
                                                 sx={{
                                                     position: 'absolute',
