@@ -67,6 +67,18 @@ export const useTaskStore = create(
                             userId: data.user
                         }));
 
+                        // If the day has already ended (endTime exists), do NOT show any tasks
+                        if (data.endTime) {
+                            console.log('Day ended for today, not loading tasks.');
+                            set({
+                                tasks: [], // Clear tasks
+                                dailyStatusId: null, // Reset ID so user can't update them
+                                isLoading: false,
+                                activeSessions: {}
+                            });
+                            return { success: true, data };
+                        }
+
                         console.log('Transformed tasks:', apiTasks);
 
                         set({
@@ -312,7 +324,7 @@ export const useTaskStore = create(
                         history: newHistory,
                         activeSessions: newActiveSessions,
                         dailyStatusId: null,
-                        tasks: [...otherTasks, ...ongoingTasks] // Keep other users' tasks and current user's ongoing tasks
+                        tasks: [...otherTasks] // Remove ALL tasks for this user (completed or not) from the view efficiently
                     };
                 });
 
