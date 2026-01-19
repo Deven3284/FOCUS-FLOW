@@ -183,7 +183,7 @@ export const useTaskStore = create(
 
                 const newIsRunning = !task.isTimerRunning;
 
-                // 1. Optimistic Local Update
+                // 1. Optimistic Local Update (Visual feedback only)
                 set((state) => ({
                     tasks: state.tasks.map(t => {
                         if (t.id === id) {
@@ -200,15 +200,48 @@ export const useTaskStore = create(
                 if (dailyStatusId) {
                     try {
                         // Use the updated task data
-                        const updatedTask = updatedState.tasks.find(t => t.id === id);
-                        const backendTask = mapToBackendTask(updatedTask);
+                        const localUpdatedTask = updatedState.tasks.find(t => t.id === id);
+                        const backendTask = mapToBackendTask(localUpdatedTask);
 
-                        await api.post('/users/updateTaskTimer', {
+                        const response = await api.post('/users/updateTaskTimer', {
                             id: dailyStatusId,
                             task: backendTask
                         });
+
+                        if (response.data && response.data.success && response.data.data) {
+                            const serverTask = response.data.data;
+
+                            // Merge server response back to local state
+                            set((state) => ({
+                                tasks: state.tasks.map(t => {
+                                    if (t.id === id) {
+                                        return {
+                                            ...t,
+                                            isTimerRunning: serverTask.isTrackerStarted,
+                                            timeElapsed: serverTask.totalSeconds || 0,
+                                            // Make sure we update other fields if backend cleaned them up
+                                            status: serverTask.status === 'completed' ? 'Completed' :
+                                                serverTask.status === 'in-progress' ? 'In Progress' :
+                                                    serverTask.status === 'pending' ? 'Pending' : 'Not Started'
+                                        };
+                                    }
+                                    return t;
+                                })
+                            }));
+                        }
+
                     } catch (error) {
                         console.error("Failed to sync timer toggle:", error);
+                        // Revert on failure? For now just log.
+                        // Ideally we should revert the optimistic update here.
+                        set((state) => ({
+                            tasks: state.tasks.map(t => {
+                                if (t.id === id) {
+                                    return { ...t, isTimerRunning: !newIsRunning };
+                                }
+                                return t;
+                            })
+                        }));
                     }
                 }
             },
